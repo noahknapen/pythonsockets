@@ -166,8 +166,8 @@ class HttpClient:
             body = input("Enter data to insert: ")
             clength = len(body.encode(HttpClient.FORMAT))
             msg = self.http_command + " " + self.file_name + " HTTP/1.1\r\nHost: " + str(self.uri) \
-                + "\r\nContent-Type: " + ctype \
-                + "\r\nContent-Length: " + str(clength) + "\r\n\r\n" + body + "\r\n"
+                  + "\r\nContent-Type: " + ctype \
+                  + "\r\nContent-Length: " + str(clength) + "\r\n\r\n" + body + "\r\n"
         else:
             msg = self.http_command + " " + self.file_name + " HTTP/1.1\r\nHost: " + str(self.uri) + "\r\n\r\n"
 
@@ -225,7 +225,7 @@ class HttpClient:
             end_header_ind = raw_data.find(raw_double_new_line)
 
         raw_header = raw_data[:end_header_ind]
-        raw_body = raw_data[end_header_ind+4:]
+        raw_body = raw_data[end_header_ind + 4:]
         return raw_header, raw_body
 
     def recv_all_data(self) -> bytes:
@@ -271,15 +271,16 @@ class HttpClient:
             return raw_body
         elif raw_header.find(raw_transfer_header) != -1:
             # transfer-encoding header
-            begin_chunksize_ind = len(raw_header)
-            end_chunksize_ind = raw_header[begin_chunksize_ind:].find(raw_new_line)
+            end_chunksize_ind = raw_begin_of_body.find(raw_new_line)
 
             while end_chunksize_ind == -1:
-                raw_header += self.client.recv(HttpClient.HEADER)
-                end_chunksize_ind = raw_header[begin_chunksize_ind:].find(raw_new_line)
+                raw_begin_of_body += self.client.recv(HttpClient.HEADER)
+                end_chunksize_ind = raw_begin_of_body.find(raw_new_line)
 
-            chunk_size = int(raw_header[begin_chunksize_ind:begin_chunksize_ind + end_chunksize_ind], 16)
-            raw_body = self.__recv_transfer_encoding_chunked(chunk_size)
+            # remove chunksize from body
+            raw_begin_of_body_wo_chunk = raw_begin_of_body[end_chunksize_ind+len(raw_new_line):]
+            chunk_size = int(raw_begin_of_body[:end_chunksize_ind], 16) - len(raw_begin_of_body_wo_chunk)
+            raw_body = self.__recv_transfer_encoding_chunked(chunk_size, raw_begin_of_body_wo_chunk)
 
             return raw_body
         else:
@@ -300,18 +301,15 @@ class HttpClient:
         """
         raw_data = b''
 
-        while chunk_size != 0:
-            if chunk_size < HttpClient.HEADER:
-                raw_data += self.client.recv(chunk_size)
-                chunk_size -= chunk_size
+        while len(raw_data) < chunk_size:
+            if chunk_size - len(raw_data) < HttpClient.HEADER:
+                raw_data += self.client.recv(chunk_size - len(raw_data))
             else:
                 raw_data += self.client.recv(HttpClient.HEADER)
-                chunk_size -= HttpClient.HEADER
-            print(chunk_size)
 
         return raw_data
 
-    def __recv_transfer_encoding_chunked(self, chunk_size: int, body: bytes = None) -> bytes:
+    def __recv_transfer_encoding_chunked(self, chunk_size: int, body: bytes = b'') -> bytes:
         """Gives the html body when the page uses 'Transfer-Encoding: chunked'
 
         Parameters
@@ -329,31 +327,31 @@ class HttpClient:
             Returns the body in bytes
         """
         if chunk_size == 0:
-            body = body[:-1]
             return body
 
-        raw_data = self.client.recv(HttpClient.HEADER)
-        chunk_size -= 1
+        raw_data = b''
 
-        while chunk_size != 0:
-            raw_data += self.client.recv(HttpClient.HEADER)
-            chunk_size -= 1
+        while len(raw_data) < chunk_size:
+            if chunk_size - len(raw_data) < HttpClient.HEADER:
+                raw_data += self.client.recv(chunk_size - len(raw_data))
+            else:
+                raw_data += self.client.recv(HttpClient.HEADER)
 
         # receive CRLF, which is irrelevant
-        _ = self.client.recv(HttpClient.HEADER)
-        _ = self.client.recv(HttpClient.HEADER)
+        _ = self.client.recv(1)
+        _ = self.client.recv(1)
 
-        raw_new_chunk_size = self.client.recv(HttpClient.HEADER)
+        raw_new_chunk_size = self.client.recv(1)
         new_line = "\r\n"
         raw_new_line = new_line.encode(HttpClient.FORMAT)
 
         while raw_new_line not in raw_new_chunk_size:
-            raw_new_chunk_size += self.client.recv(HttpClient.HEADER)
+            raw_new_chunk_size += self.client.recv(1)
 
         raw_new_chunk_size = raw_new_chunk_size[:-2]
         new_chunk_size = int(raw_new_chunk_size.decode(HttpClient.FORMAT), 16)
 
-        if body is None:
+        if body == b'':
             body = raw_data
         else:
             body += raw_data
@@ -437,7 +435,7 @@ class HttpClient:
                 # replace location reference in data
                 if added_slash is True:
                     src = src[1:]
-                data = data.replace(src, loc[1:])   # do not add the slash of loc in the html file
+                data = data.replace(src, loc[1:])  # do not add the slash of loc in the html file
                 print("[WRITE] replace remote img loc:", src, "with local loc:", loc)
 
         return data
