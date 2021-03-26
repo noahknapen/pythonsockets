@@ -99,7 +99,15 @@ class HttpClient:
         begin_uri_ind = uri_to_filename.find(wrld_wide_web)
         end_uri_ind = uri_to_filename[begin_uri_ind:].find(slashstr) + begin_uri_ind
 
-        if end_uri_ind == begin_uri_ind - 1:
+        if begin_uri_ind == -1:
+            end_uri_ind = uri_to_filename.find(slashstr)
+            if end_uri_ind == -1:
+                uri = uri_to_filename
+                file = "/"
+            else:
+                uri = uri_to_filename[:end_uri_ind]
+                file = uri_to_filename[end_uri_ind:]
+        elif end_uri_ind == begin_uri_ind - 1:
             uri = uri_to_filename
             file = "/"
         else:
