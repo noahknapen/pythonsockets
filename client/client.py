@@ -23,7 +23,7 @@ class HttpClient:
         the socket object representing the client
     """
     FORMAT: str = 'latin-1'  # alias for iso-8859-1 (default charset for HTTP)
-    HEADER: int = 1
+    HEADER: int = 4096
     HTTP_VERSION: str = 'HTTP/1.1'
     # EXTRA: check for format in body (see self.recv_all_data())
     # FORMATS: dict = {"latin-1": ["iso-8859-1", "latin-1"], "utf-8": ["utf", "utf8", "utf-8"], }
@@ -130,7 +130,7 @@ class HttpClient:
             recv_with_updated_imgs = self.update_images(recv)
             self.write_to_html_file(recv_with_updated_imgs)
         elif self.http_command == "HEAD":
-            recv_raw = self.recv_header()
+            recv_raw, _ = self.recv_header()
             recv = recv_raw.decode(HttpClient.FORMAT)
             recv_with_updated_imgs = self.update_images(recv)
             self.write_to_html_file(recv_with_updated_imgs)
@@ -202,23 +202,31 @@ class HttpClient:
         self.client.send(message)
         print("[MESSAGE] message sent:", msg)
 
-    def recv_header(self) -> bytes:
-        """Receive data from the server in response to a HTTP HEAD command
+    def recv_header(self) -> tuple:
+        """Receive header from the server
+
+        Since bytes get received in chunks from the server, a part of the body can be fetched while retrieving
+        the header if the HTTP command is a GET.
 
        Returns
        -------
-       bytes
-           Returns the data gotten from the server in bytes
+       tuple
+           Returns the data gotten from the server in bytes in a tuple with the header and
+           the beginning part of the body, respectively
        """
         print("[RECV] receiving header data...")
         raw_data = b''
         double_new_line = "\r\n\r\n"
         raw_double_new_line = double_new_line.encode(HttpClient.FORMAT)
+        end_header_ind = raw_data.find(raw_double_new_line)
 
-        while raw_double_new_line not in raw_data:
+        while end_header_ind == -1:
             raw_data += self.client.recv(HttpClient.HEADER)
+            end_header_ind = raw_data.find(raw_double_new_line)
 
-        return raw_data
+        raw_header = raw_data[:end_header_ind]
+        raw_body = raw_data[end_header_ind+4:]
+        return raw_header, raw_body
 
     def recv_all_data(self) -> bytes:
         """Receive data from the server in response to a HTTP GET command
@@ -230,7 +238,7 @@ class HttpClient:
         bytes
             Returns the data gotten from the server in bytes
         """
-        raw_header = self.recv_header()
+        raw_header, raw_begin_of_body = self.recv_header()
         print(raw_header.decode(HttpClient.FORMAT))
         print("[RECV] receiving body data...")
         raw_content_header = "Content-Length:".encode(HttpClient.FORMAT)
@@ -255,14 +263,10 @@ class HttpClient:
 
         if begin_chunksize_ind != len(raw_content_header) - 1:
             # content-length header
-            end_chunksize_ind = raw_header[begin_chunksize_ind:].find(raw_new_line)
+            end_chunksize_ind = raw_header[begin_chunksize_ind:].find(raw_new_line) + begin_chunksize_ind
 
-            while end_chunksize_ind == -1:
-                raw_header += self.client.recv(HttpClient.HEADER)
-                end_chunksize_ind = raw_header[begin_chunksize_ind:].find(raw_new_line)
-
-            chunk_size = int(raw_header[begin_chunksize_ind:begin_chunksize_ind + end_chunksize_ind])
-            raw_body = self.__recv_content_length(chunk_size)
+            chunk_size = int(raw_header[begin_chunksize_ind:end_chunksize_ind]) - len(raw_begin_of_body)
+            raw_body = raw_begin_of_body + self.__recv_content_length(chunk_size)
 
             return raw_body
         elif raw_header.find(raw_transfer_header) != -1:
@@ -297,8 +301,13 @@ class HttpClient:
         raw_data = b''
 
         while chunk_size != 0:
-            raw_data += self.client.recv(HttpClient.HEADER)
-            chunk_size -= 1
+            if chunk_size < HttpClient.HEADER:
+                raw_data += self.client.recv(chunk_size)
+                chunk_size -= chunk_size
+            else:
+                raw_data += self.client.recv(HttpClient.HEADER)
+                chunk_size -= HttpClient.HEADER
+            print(chunk_size)
 
         return raw_data
 
