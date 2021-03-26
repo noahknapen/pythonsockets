@@ -9,24 +9,29 @@ class HttpClient:
 
     Attributes
     ----------
-    HttpClient.FORMAT
-        a static string representing the message the client has to send to disconnect from the server
+    HttpClient.FORMAT: str
+        A static string representing the message the client has to send to disconnect from the server
     HttpClient.HEADER: int
-        a static integer specifying the maximum bytes to be received at once
+        A static integer specifying the maximum bytes to be received at once
     HttpClient.HTTP_VERSION: str
-        specifies the HTTP version used in this client
+        Specifies the HTTP version used in this client
     uri: str
-        hostname in Internet domain notation or IPv4 address of the server to main to.
+        Hostname in Internet domain notation or IPv4 address of the server
     port: int
-        an integer specifying the port to use for communication between client and server.
-    client: socket
-        the socket object representing the client
+        An integer specifying the port to use for communication between client and server
+    http_command: str
+        The HTTP command to execute (supported commands are HEAD, GET, PUT, POST
+    file_name: str
+        The file to execute the HTTP command on
+    client: socket.socket
+        The socket object representing the client
+    format_body: str
+        Not implemented but should take over from FORMAT to get better decodings
     """
     FORMAT: str = 'latin-1'  # alias for iso-8859-1 (default charset for HTTP)
     HEADER: int = 4096
     HTTP_VERSION: str = 'HTTP/1.1'
-    # EXTRA: check for format in body (see self.recv_all_data())
-    # FORMATS: dict = {"latin-1": ["iso-8859-1", "latin-1"], "utf-8": ["utf", "utf8", "utf-8"], }
+    FORMATS: dict = {"latin-1": ["iso-8859-1", "latin-1"], "utf-8": ["utf", "utf8", "utf-8"], }
 
     uri: str
     port: int
@@ -38,6 +43,7 @@ class HttpClient:
     def __init__(self):
         print("[SETUP] client is starting...")
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.format_body = HttpClient.FORMAT
 
         try:
             self.uri, self.file_name = HttpClient.get_remote_uri_and_filename(sys.argv[1])
@@ -87,10 +93,10 @@ class HttpClient:
         tuple
             Returns respectively the uri and filename
         """
-        http_str = "http://"
+        wrld_wide_web = "www"
         slashstr = "/"
 
-        begin_uri_ind = len(http_str)
+        begin_uri_ind = uri_to_filename.find(wrld_wide_web)
         end_uri_ind = uri_to_filename[begin_uri_ind:].find(slashstr) + begin_uri_ind
 
         if end_uri_ind == begin_uri_ind - 1:
@@ -130,24 +136,24 @@ class HttpClient:
 
         if self.http_command == "GET":
             recv_raw = self.recv_all_data()
-            recv = recv_raw.decode(HttpClient.FORMAT)
+            recv = recv_raw.decode(self.format_body)
             recv_with_updated_imgs = self.update_images(recv)
             self.write_to_html_file(recv_with_updated_imgs)
         elif self.http_command == "HEAD":
             recv_raw, _ = self.recv_header()
-            recv = recv_raw.decode(HttpClient.FORMAT)
+            recv = recv_raw.decode(self.format_body)
             recv_with_updated_imgs = self.update_images(recv)
             self.write_to_html_file(recv_with_updated_imgs)
         elif self.http_command == "PUT":
             recv_raw = self.recv_all_data()
             if recv_raw != b'':
-                recv = recv_raw.decode(HttpClient.FORMAT)
+                recv = recv_raw.decode(self.format_body)
                 recv_with_updated_imgs = self.update_images(recv)
                 self.write_to_html_file(recv_with_updated_imgs)
         elif self.http_command == "POST":
             recv_raw = self.recv_all_data()
             if recv_raw != b'':
-                recv = recv_raw.decode(HttpClient.FORMAT)
+                recv = recv_raw.decode(self.format_body)
                 recv_with_updated_imgs = self.update_images(recv)
                 self.write_to_html_file(recv_with_updated_imgs)
 
@@ -247,21 +253,24 @@ class HttpClient:
         print("[RECV] receiving body data...")
         raw_content_header = "Content-Length:".encode(HttpClient.FORMAT)
         raw_transfer_header = "Transfer-Encoding".encode(HttpClient.FORMAT)
-        # raw_charset_header = "charset=".encode(HttpClient.FORMAT)
+        raw_charset_header = "charset=".encode(HttpClient.FORMAT)
         raw_new_line = "\r\n".encode(HttpClient.FORMAT)
 
-        # begin_charset_ind = raw_header.find(raw_charset_header) + len(raw_charset_header)
+        begin_charset_ind = raw_header.find(raw_charset_header) + len(raw_charset_header)
 
-        # EXTRA: check format to display special characters
-        # if begin_charset_ind == len(raw_charset_header):
-        #     self.format_body = 'utf-8'
-        # else:
-        #     end_charset_ind = raw_header[begin_charset_ind:].find(raw_new_line) + begin_charset_ind
-        #     raw_charset = raw_header[begin_charset_ind:end_charset_ind]
-        #     charset = raw_charset.decode(HttpClient.FORMAT).strip().lower()
-        #     self.format_body =
-        #     # TODO: extra: check in FORMATS if self.format_body is not an alias of the supported encode()
-        #     # print(self.format_body)
+        if begin_charset_ind == len(raw_charset_header) - 1:
+            pass
+        else:
+            end_charset_ind = raw_header[begin_charset_ind:].find(raw_new_line) + begin_charset_ind
+            raw_charset = raw_header[begin_charset_ind:end_charset_ind]
+            charset = raw_charset.decode(HttpClient.FORMAT).strip().lower()
+
+            for key in HttpClient.FORMATS.keys():
+                for value in HttpClient.FORMATS.get(key):
+                    if value == charset:
+                        self.format_body = key
+
+        print(self.format_body)
 
         begin_chunksize_ind = raw_header.find(raw_content_header) + len(raw_content_header)
 
@@ -269,7 +278,11 @@ class HttpClient:
             # content-length header
             end_chunksize_ind = raw_header[begin_chunksize_ind:].find(raw_new_line) + begin_chunksize_ind
 
-            chunk_size = int(raw_header[begin_chunksize_ind:end_chunksize_ind]) - len(raw_begin_of_body)
+            if end_chunksize_ind == begin_chunksize_ind - 1:
+                chunk_size = int(raw_header[begin_chunksize_ind:]) - len(raw_begin_of_body)
+            else:
+                chunk_size = int(raw_header[begin_chunksize_ind:end_chunksize_ind]) - len(raw_begin_of_body)
+
             raw_body = raw_begin_of_body + self.__recv_content_length(chunk_size)
 
             return raw_body
