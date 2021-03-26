@@ -38,13 +38,13 @@ class HttpClient:
     def __init__(self):
         print("[SETUP] client is starting...")
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
         try:
-            self.uri: str = sys.argv[1]
-            self.port: int = int(sys.argv[2])
+            self.uri, self.file_name = HttpClient.get_remote_uri_and_filename(sys.argv[1])
+            self.port = int(sys.argv[2])
             self.http_command = sys.argv[3]
-            self.file_name = sys.argv[4]
         except IndexError:
-            print("[ERROR] pass arguments in following order: URI, PORT, HTTPCOMMAND, FILE")
+            print("[ERROR] pass arguments in following order: URI, PORT, HTTPCOMMAND")
         else:
             self.main()
 
@@ -93,9 +93,13 @@ class HttpClient:
         begin_uri_ind = len(http_str)
         end_uri_ind = uri_to_filename[begin_uri_ind:].find(slashstr) + begin_uri_ind
 
-        uri = uri_to_filename[begin_uri_ind: end_uri_ind]
-        file = uri_to_filename[end_uri_ind:]
-        print(uri)
+        if end_uri_ind == begin_uri_ind - 1:
+            uri = uri_to_filename
+            file = "/"
+        else:
+            uri = uri_to_filename[begin_uri_ind: end_uri_ind]
+            file = uri_to_filename[end_uri_ind:]
+
         return uri, file
 
     def main(self):
