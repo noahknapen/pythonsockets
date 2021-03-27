@@ -4,8 +4,6 @@ import datetime
 import os
 import re
 
-# TODO: implement disconnect
-
 
 class HttpServer:
     """
@@ -281,7 +279,7 @@ class HttpServer:
         begin_mod_date_ind = request_header.find(modified_header)
 
         if begin_mod_date_ind != -1:
-            new_line = "\n"
+            new_line = "\r\n"
             end_mod_date_ind = request_header[begin_mod_date_ind:].find(new_line) + begin_mod_date_ind
             date_and_time = request_header[begin_mod_date_ind:end_mod_date_ind][len(modified_header):]
 
@@ -309,20 +307,12 @@ class HttpServer:
         int
             Returns either the status code 200, 201 or 501
         """
-        length = "Content-Length"
-        ctype = "Content-Type"
+        ctype = "Content-Type: text/html"
         if file == "/":
             file = "/index.html"
 
-        content_occurrences = [m.start() for m in re.finditer("Content-", request_header)]
-
-        for occurrence in content_occurrences:
-            if request_header[occurrence:occurrence + len(length)] == length:
-                pass
-            elif request_header[occurrence:occurrence + len(ctype)] == ctype:
-                pass
-            else:
-                return 501
+        if request_header.find(ctype) == -1:
+            return 501
 
         if not os.path.isfile(file[1:]):
             return 201
@@ -528,7 +518,7 @@ class HttpServer:
         """
         date = datetime.datetime.now(datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
 
-        header = "HTTP/1.1 501 Not Implemented" + "\r\nDate: " + date + "\r\n"
+        header = "HTTP/1.1 501 Not Implemented" + "\r\nDate: " + date + "\r\n\r\n"
         print(header)
         return header.encode(HttpServer.FORMAT)
 
@@ -553,10 +543,7 @@ class HttpServer:
             file = split_request_header[1]
             print("[RECV] header received from IPv4 address", address[0], ":", request_header)
 
-            if request_header == HttpServer.DISCONNECT_MESSAGE:
-                # conn_socket.send(bytes(connected))
-                break
-            elif not HttpServer.is_valid_http_request(split_request_header):
+            if not HttpServer.is_valid_http_request(split_request_header):
                 http_message = HttpServer.create_400_response()
                 pass
             else:

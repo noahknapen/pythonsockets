@@ -46,11 +46,11 @@ class HttpClient:
         self.format_body = HttpClient.FORMAT
 
         try:
-            self.uri, self.file_name = HttpClient.get_remote_uri_and_filename(sys.argv[1])
-            self.port = int(sys.argv[2])
-            self.http_command = sys.argv[3]
+            self.http_command = sys.argv[1]
+            self.uri, self.file_name = HttpClient.get_remote_uri_and_filename(sys.argv[2])
+            self.port = int(sys.argv[3])
         except IndexError:
-            print("[ERROR] pass arguments in following order: URI, PORT, HTTPCOMMAND")
+            print("[ERROR] pass arguments in following order: COMMAND, URI, PORT")
         else:
             self.main()
 
@@ -277,8 +277,6 @@ class HttpClient:
                 for value in HttpClient.FORMATS.get(key):
                     if value == charset:
                         self.format_body = key
-
-        print(self.format_body)
 
         begin_chunksize_ind = raw_header.find(raw_content_header) + len(raw_content_header)
 
