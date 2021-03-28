@@ -442,8 +442,8 @@ class HttpClient:
         """
         soup = BeautifulSoup(data, 'html.parser')
         images = soup.find_all('img')
+        imgs_fetched = 0
         added_slash = False
-        # print(images)
 
         for img in images:
             img_src = [img['src']]
@@ -455,8 +455,9 @@ class HttpClient:
             else:
                 img_src.append(img_lowsrc)
 
+            imgs_fetched += 1
             for src in img_src:
-                if src == img_src[-1]:
+                if imgs_fetched == len(images):
                     self.close_connection = True
 
                 if src.find("http://") == -1 and src[0] != "/":
@@ -515,7 +516,6 @@ class HttpClient:
         f.close()
 
     def disconnect(self):
-        self.client.send("DISCONNECT".encode(HttpClient.FORMAT))
         self.client.close()
 
 

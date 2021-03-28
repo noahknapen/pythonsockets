@@ -1,8 +1,8 @@
 import socket
 import threading
 import datetime
-import time
 import os
+import re
 
 
 class HttpServer:
@@ -299,6 +299,11 @@ class HttpServer:
             return False
         if split_request_header[2] != "HTTP/1.1":
             return False
+        if split_request_header[0] == "PUT" or split_request_header[0] == "POST":
+            # see if there aren't any directories preceding the file
+            occurrences = re.findall("/", split_request_header[1])
+            if len(occurrences) > 1:
+                return False
 
         return True
 
@@ -620,8 +625,6 @@ class HttpServer:
         header = "HTTP/1.1 501 Not Implemented" + "\r\nDate: " + date + "\r\n\r\n"
         print(header)
         return header.encode(HttpServer.FORMAT)
-
-
 
 
 if __name__ == "__main__":
