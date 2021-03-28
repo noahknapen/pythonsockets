@@ -1,8 +1,8 @@
 import socket
 import threading
 import datetime
+import time
 import os
-import re
 
 
 class HttpServer:
@@ -58,6 +58,105 @@ class HttpServer:
         print("[SETUP] server bound to IPv4 address", self.ipv4, "on port", HttpServer.PORT)
         self.server.listen()
         print("[SETUP] server listening for connections")
+
+    def __manage_client_thread(self, conn_socket: socket.socket, address: tuple):
+        """Manages a single client.
+
+        Checks the received messages of the given client for HTTP commands and acts accordingly
+
+        Parameters
+        ----------
+        conn_socket: socket.socket
+            Socket to identify the client
+        address: tuple
+            Tuple consisting of length two with respectively the IPv4 address and port of the client
+        """
+        print("[THREAD] new thread started for client")
+        connected = True
+
+        while connected:
+            request_header = HttpServer.get_request_header(conn_socket)
+            split_request_header = request_header.split()
+            file = split_request_header[1]
+            print("[RECV] header received from IPv4 address", address[0], ":", request_header)
+
+            if not HttpServer.is_valid_http_request(split_request_header):
+                http_message = HttpServer.create_400_response()
+                pass
+            else:
+                if file == "/":
+                    file = "/index.html"
+
+                put_or_post = HttpServer.is_put_or_post(split_request_header)
+                try:
+                    if put_or_post:
+                        request_body = HttpServer.get_request_body(conn_socket, request_header)
+                        status_code = HttpServer.get_status_code_for_put_or_post(request_header, file)
+
+                        if status_code == 204:
+                            if split_request_header[0] == "PUT":
+                                f = open(file[1:], "w")
+                            else:
+                                f = open(file[1:], "a")
+
+                            f.write(request_body)
+                            f.close()
+                            http_message = HttpServer.create_204_response()
+                        elif status_code == 501:
+                            http_message = HttpServer.create_501_response()
+                        else:  # status code is 201
+                            f = open(file[1:], "x")
+                            f.write(request_body)
+                            f.close()
+                            http_message = self.create_201_response(file)
+
+                    else:
+                        if split_request_header[0] == "GET":
+                            # GET needs filename
+                            status_code = HttpServer.get_status_code_for_get(request_header, file)
+                        else:
+                            status_code = HttpServer.get_status_code_for_head(file)
+
+                        if status_code == 404:
+                            http_message = HttpServer.create_404_response()
+                        elif status_code == 304:
+                            http_message = HttpServer.create_304_response()
+                        else:  # status code is 200
+                            http_message = HttpServer.create_200_response(file)
+                except Exception:
+                    http_message = HttpServer.create_500_response()
+
+            conn_socket.send(http_message)
+
+            # determine if connection has to be closed
+            conn_str = "Connection:"
+            conn_begin_ind = request_header.find(conn_str)
+
+            if conn_begin_ind != -1:
+                conn_end_ind = request_header[conn_begin_ind:].find("\r\n") + conn_begin_ind
+                conn_status = request_header[conn_begin_ind+len(conn_str):conn_end_ind].strip()
+                if conn_status == "close":
+                    conn_socket.close()
+                    connected = False
+                    print("[THREAD] client thread ended")
+
+    def loop(self):
+        """Loop to execute as long as server is online
+
+        This function will manage connections
+        If a client disconnects, the user will be asked if the server has to shut down or not.
+        """
+        disconnect = False
+
+        while not disconnect:
+            print("[CONNECTION] waiting for new connection")
+            # To use accept(), server must be bound to an address and listening for connections
+            # conn is a new socket object usable to send and receive data
+            # addr is address bound to socket on other side of the connection
+            conn, addr = self.server.accept()  # accept() is blocking method untill client connects
+            print("[CONNECTION] new connection:", addr[0], "accepted.")
+            client_thread = threading.Thread(target=self.__manage_client_thread, args=(conn, addr), daemon=True)
+            client_thread.start()
 
     @staticmethod
     def date_older_than_file_date(date_and_time: str, file: str) -> bool:
@@ -522,92 +621,7 @@ class HttpServer:
         print(header)
         return header.encode(HttpServer.FORMAT)
 
-    def __manage_client_thread(self, conn_socket: socket.socket, address: tuple):
-        """Manages a single client.
 
-        Checks the received messages of the given client for HTTP commands and acts accordingly
-
-        Parameters
-        ----------
-        conn_socket: socket.socket
-            Socket to identify the client
-        address: tuple
-            Tuple consisting of length two with respectively the IPv4 address and port of the client
-        """
-        print("[THREAD] new thread started for client")
-        connected = True
-
-        while connected:
-            request_header = HttpServer.get_request_header(conn_socket)
-            split_request_header = request_header.split()
-            file = split_request_header[1]
-            print("[RECV] header received from IPv4 address", address[0], ":", request_header)
-
-            if not HttpServer.is_valid_http_request(split_request_header):
-                http_message = HttpServer.create_400_response()
-                pass
-            else:
-                if file == "/":
-                    file = "/index.html"
-
-                put_or_post = HttpServer.is_put_or_post(split_request_header)
-                try:
-                    if put_or_post:
-                        request_body = HttpServer.get_request_body(conn_socket, request_header)
-                        status_code = HttpServer.get_status_code_for_put_or_post(request_header, file)
-
-                        if status_code == 204:
-                            if split_request_header[0] == "PUT":
-                                f = open(file[1:], "w")
-                            else:
-                                f = open(file[1:], "a")
-
-                            f.write(request_body)
-                            f.close()
-                            http_message = HttpServer.create_204_response()
-                        elif status_code == 501:
-                            http_message = HttpServer.create_501_response()
-                        else:   # status code is 201
-                            f = open(file[1:], "x")
-                            f.write(request_body)
-                            f.close()
-                            http_message = self.create_201_response(file)
-
-                    else:
-                        if split_request_header[0] == "GET":
-                            # GET needs filename
-                            status_code = HttpServer.get_status_code_for_get(request_header, file)
-                        else:
-                            status_code = HttpServer.get_status_code_for_head(file)
-
-                        if status_code == 404:
-                            http_message = HttpServer.create_404_response()
-                        elif status_code == 304:
-                            http_message = HttpServer.create_304_response()
-                        else:   # status code is 200
-                            http_message = HttpServer.create_200_response(file)
-                except:
-                    http_message = HttpServer.create_500_response()
-
-            conn_socket.send(http_message)
-
-    def loop(self):
-        """Loop to execute as long as server is online
-
-        This function will manage connections
-        If a client disconnects, the user will be asked if the server has to shut down or not.
-        """
-        disconnect = False
-
-        while not disconnect:
-            print("[CONNECTION] waiting for new connection")
-            # To use accept(), server must be bound to an address and listening for connections
-            # conn is a new socket object usable to send and receive data
-            # addr is address bound to socket on other side of the connection
-            conn, addr = self.server.accept()  # accept() is blocking method untill client connects
-            print("[CONNECTION] new connection:", addr[0], "accepted.")
-            client_thread = threading.Thread(target=self.__manage_client_thread, args=(conn, addr), daemon=True)
-            client_thread.start()
 
 
 if __name__ == "__main__":

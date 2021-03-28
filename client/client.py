@@ -27,6 +27,8 @@ class HttpClient:
         The socket object representing the client
     format_body: str
         Not implemented but should take over from FORMAT to get better decodings
+    close_connection: bool
+        Determine if connection has to be closed after sending a GET request
     """
     FORMAT: str = 'latin-1'  # alias for iso-8859-1 (default charset for HTTP)
     HEADER: int = 4096
@@ -39,11 +41,13 @@ class HttpClient:
     file_name: str
     client: socket.socket
     format_body: str
+    close_connection: bool
 
     def __init__(self):
         print("[SETUP] client is starting...")
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.format_body = HttpClient.FORMAT
+        self.close_connection = False
 
         try:
             self.http_command = sys.argv[1]
@@ -142,12 +146,7 @@ class HttpClient:
         else:
             self.file_name = HttpClient.create_file_location(self.file_name)
 
-        if self.http_command == "GET":
-            recv_raw = self.recv_all_data()
-            recv = recv_raw.decode(self.format_body)
-            recv_with_updated_imgs = self.update_images(recv)
-            self.write_to_html_file(recv_with_updated_imgs)
-        elif self.http_command == "HEAD":
+        if self.http_command == "HEAD":
             recv_raw, _ = self.recv_header()
             recv = recv_raw.decode(self.format_body)
             recv_with_updated_imgs = self.update_images(recv)
@@ -164,6 +163,11 @@ class HttpClient:
                 recv = recv_raw.decode(self.format_body)
                 recv_with_updated_imgs = self.update_images(recv)
                 self.write_to_html_file(recv_with_updated_imgs)
+        else:   # http_command == "GET" or it is a bad request
+            recv_raw = self.recv_all_data()
+            recv = recv_raw.decode(self.format_body)
+            recv_with_updated_imgs = self.update_images(recv)
+            self.write_to_html_file(recv_with_updated_imgs)
 
         self.disconnect()
         print("[CONNECTION] Client terminated")
@@ -184,10 +188,12 @@ class HttpClient:
             body = input("Enter data to insert: ")
             clength = len(body.encode(HttpClient.FORMAT))
             msg = self.http_command + " " + self.file_name + " HTTP/1.1\r\nHost: " + str(self.uri) \
-                  + "\r\nContent-Type: " + ctype \
-                  + "\r\nContent-Length: " + str(clength) + "\r\n\r\n" + body + "\r\n"
+                + "\r\nConnection: close" \
+                + "\r\nContent-Type: " + ctype \
+                + "\r\nContent-Length: " + str(clength) + "\r\n\r\n" + body + "\r\n"
         else:
-            msg = self.http_command + " " + self.file_name + " HTTP/1.1\r\nHost: " + str(self.uri) + "\r\n\r\n"
+            msg = self.http_command + " " + self.file_name + " HTTP/1.1\r\nHost: " + str(self.uri) \
+                + "\r\n\r\n"
 
         return msg
 
@@ -205,7 +211,12 @@ class HttpClient:
         str
             Valid HTTP request
         """
-        msg = "GET " + img_loc + " HTTP/1.1\r\nHost: " + str(self.uri) + "\r\n\r\n"
+        if self.close_connection is False:
+            msg = "GET " + img_loc + " HTTP/1.1\r\nHost: " + str(self.uri) + "\r\n\r\n"
+        else:
+            msg = "GET " + img_loc + " HTTP/1.1\r\nHost: " + str(self.uri) \
+                  + "\r\nConnection: close"\
+                  + "\r\n\r\n"
         return msg
 
     def send(self, msg: str):
@@ -445,6 +456,8 @@ class HttpClient:
                 img_src.append(img_lowsrc)
 
             for src in img_src:
+                if src == img_src[-1]:
+                    self.close_connection = True
 
                 if src.find("http://") == -1 and src[0] != "/":
                     added_slash = True
