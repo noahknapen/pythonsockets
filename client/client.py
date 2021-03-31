@@ -195,6 +195,8 @@ class HttpClient:
             msg = self.http_command + " " + self.file_name + " HTTP/1.1\r\nHost: " + str(self.uri) \
                 + "\r\n\r\n"
 
+            # + "\r\nIf-Modified-Since: 30 Mar 2021 23:24:50 GMT"
+
         return msg
 
     def create_secondary_http_command(self, img_loc: str) -> str:
